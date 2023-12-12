@@ -56,6 +56,12 @@ void loop() {
     fewerFumeTime = millis();//Start counting time.
     fewerLedTime = fewerFumeTime;
     //While busy, show lights and fumes.
+    while((player.readState() != Busy)){
+      digitalWrite(led1,HIGH);
+      digitalWrite(led2,HIGH);
+      digitalWrite(led3,HIGH);
+      digitalWrite(led4,HIGH);
+    }
     while (player.readState() == Busy){
       //Fumes Cicle./////////////////////////////////////
       actualTime = millis();
