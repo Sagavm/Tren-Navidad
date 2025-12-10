@@ -2,7 +2,7 @@
   #include <DFRobotDFPlayerMini.h>
   const byte chimney = 2; 
   const byte engine = 3; //To applty PWM signal to control the speed.
-  const byte led1 = 9, led2 = 10, led3 = 11, led4 = 12;
+  const byte led1 = 9, led2 = 10, led3 = 11, led4 = 13; ///////////////////////////////////////////////////Cambiar al final
   const byte sensor = A0, trigger = A1, stationSound = 1, breakSound = 2, startingSong = 3;
   const int playerBusy = 513, playerReady = 512;
   const int minDist = 40, stopDist = 5;
@@ -14,16 +14,10 @@
   int counter;
   SoftwareSerial serialConnection(6, 5); // RX, TX 5
   DFRobotDFPlayerMini player;
-  bool person, stopSignal, playM, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, fumeStopped, playingSong; 
+  bool person, stopSignal, playM, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, fumeStopped, playingSong, setUp; 
   //To control starting engine
-  const int steps = 200;         // softness resolution
-  const float dt = (float)accelerationTime / steps;
-  const float pwmStart = 0.30 * 255.0;  // 30% = 76.5
-  const float pwmEnd    = 0.98 * 255.0;  // 98% = 249.9
-  //To control stopping engine
-  const float startPWM = 0.98 * 255;   // 98%
-  const float endPWM   = 0;            // 0%
-  const unsigned long duration = 15000; // 15 segundos
+  int startEngineTime = 4, stopEngineTime = 15, engineSteps = 200, startStepsTime, stopStepsTime;
+  const float pwmStart = 76.5, pwmEnd = 250, pwmSteps = 250/76.5;
 
 
 void setup() {
@@ -52,6 +46,8 @@ void setup() {
   //Inicio de variables
   person = true;
   fewerPersonTime = millis();
+  startStepsTime = (int)startEngineTime/engineSteps;
+  stopStepsTime = (int)stopEngineTime/engineSteps;
 }
 
 void loop() {
@@ -80,9 +76,10 @@ void loop() {
     PlayMusic(actualSong);
     actualSong += 1;
     playM = false;
+    fewerEngineTime = millis();
   }
   if (engineWorking){
-    StartEngine();
+    StartEngine(startStepsTime);
     playingSong =  true;
   }
   if (onLeds){
@@ -96,28 +93,35 @@ void loop() {
   if (!onLeds){
     if (actualTime - fewerLedTime <= ledStepTime){
       OffLeds();
+    }else{
       onLeds = true;
       fewerLedTime = millis();
     }
   }
   if (onFumes){
+    bool started;
     if (actualTime - fewerFumeTime <= fumeTime){
-      StartFumes();
+      if (!started){
+        StartFumes();
+        started = true;
+      }
     }else{
       onFumes = false;
       fumeStopped = false;
+      started = false;
       fewerFumeTime = millis();
     }
   }
   if (!onFumes){
-    if (!fumeStopped){
-      StopFumes();
-      fumeStopped = true;
-    }
+    bool stopped;
     if (actualTime - fewerFumeTime <= fumeTime){
-      delay(1);
+      if (!stopped){
+        StopFumes();
+        stopped = true;
+      }
     }else{
       onFumes = true;
+      stopped = false;
       fewerFumeTime = millis();
       }
   }
@@ -137,7 +141,7 @@ void loop() {
       fewerEngineTime = millis();
     }
     if (stoppingEngine){
-      StopEngine(fewerEngineTime);
+      StopEngine(stopStepsTime);
       if(goToSleep){
         OffLeds();
         onLeds = false;
@@ -146,6 +150,7 @@ void loop() {
         stopSignal = false;
         person = true;
         goToSleep = false;
+        setUp = false; //For stopping engine in next song.
         delay(30000);
         fewerPersonTime = millis();
       }
@@ -173,39 +178,32 @@ void StopMusic(){
   player.stop();
   Serial.println("Deteniendo Módulo DFPlayer");
 }
-void StartEngine(){
-  if (counter <= steps){
-    // esponential acceleration
-    float t = (float)counter / steps;      // 0 → 1
-    float curve = pow(t, 2.8);       // EXPONENTIAL (2.8 = soft)
-    int pwm = pwmStart + curve * (pwmEnd - pwmStart);
-    analogWrite(engine, pwm);
-    delay(dt);
-    counter +=1;
+int StartEngine(int time){
+  int power;
+  if (actualTime-fewerEngineTime >= time){
+    power += (int)pwmSteps;
+    analogWrite(engine, power);
+    fewerEngineTime = millis();
   }
-  if (counter > steps){
-    counter = 0;
+  if (power >= pwmEnd){
     engineWorking = false;
   }
 }
-void StopEngine(unsigned long startTime){
-    Serial.println("Deteniendo Motor");
-    unsigned long elapsed = millis() - startTime;
-    // Progreso 0.0 → 1.0
-    float t = (float)elapsed / duration;
-    // Curva exponencial inversa: desaceleración suave
-    // Fórmula: y = (1 - e^( -α * t )) 
-    // Ajuste α = 4 para una curva bonita
-    float alpha = 4.0;
-    float curve = exp(-alpha * t);
-    // Valor PWM interpolado
-    float pwmValue = endPWM + (startPWM - endPWM) * curve;
-    analogWrite(engine, (int)pwmValue);
-    delay(20);  // 50 actualizaciones por segundo
-    if (elapsed >= duration) {
-        analogWrite(engine, 0);   // detener completamente
-        goToSleep = true;// salir de la función
-    }
+void StopEngine(int time){
+  int power;
+  if (!setUp){
+    power = pwmEnd;
+    setUp = true;
+  }
+  if (actualTime-fewerEngineTime >= time){
+    power -= (int)pwmSteps;
+    analogWrite(engine, power);
+    fewerEngineTime = millis();
+  }
+  if (power <= pwmStart){
+    engineWorking = false;
+    analogWrite(engine, 0);
+  } 
 }
 void OnLeds(){
   digitalWrite(led1,HIGH);

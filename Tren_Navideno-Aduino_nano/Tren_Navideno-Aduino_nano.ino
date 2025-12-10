@@ -23,7 +23,7 @@ void setup() {
   pinMode(led4, OUTPUT);
   pinMode(sensor, INPUT);
   pinMode(trigger,OUTPUT);
-  selectedSong = 2; ////////////////////////////////////////////////////////
+  selectedSobg = 2;////////////////////////////////////////////////////////
   bool dfPlayerStarted = false;
   serialConnection.begin(9600);
   Serial.begin(9600); //Start communication between pc and board
