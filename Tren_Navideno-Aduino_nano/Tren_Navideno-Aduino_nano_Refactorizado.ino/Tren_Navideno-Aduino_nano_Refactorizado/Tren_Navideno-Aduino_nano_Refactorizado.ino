@@ -10,13 +10,13 @@
   byte actualSong = 3, lastLapSong = 1, stoppingSong = 2, songsQ;
   long sensorVal;
   const int ledStepTime = 250, fumeTime = 100;
-  unsigned long fewerPersonTime, fewerSensorTime, fewerFumeTime, fumeElapseTime,fewerLedTime, actualTime, fewerEngineTime;
+  unsigned long fewerPersonTime, fewerSensorTime, fewerFumeTime,fewerLedTime, actualTime, fewerEngineTime;
   int counter;
   SoftwareSerial serialConnection(6, 5); // RX, TX 5
   DFRobotDFPlayerMini player;
-  bool person, stopSignal, playM, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, fumeStopped, playingSong, setUp; 
-  //To control starting engine
-  int startEngineTime = 4, stopEngineTime = 15, engineSteps = 200, startStepsTime, stopStepsTime;
+  bool person, stopSignal, playM, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, fumeStopped, playingActualSong, setUp; 
+  //To control starting engine (Time in ms)
+  int startEngineTime = 4000, stopEngineTime = 15000, engineSteps = 200, fumeAltTime = 80, startStepsTime, stopStepsTime, power;
   const float pwmStart = 76.5, pwmEnd = 250, pwmSteps = 250/76.5;
 
 
@@ -76,11 +76,11 @@ void loop() {
     PlayMusic(actualSong);
     actualSong += 1;
     playM = false;
+    playingActualSong =  true;
     fewerEngineTime = millis();
   }
   if (engineWorking){
     StartEngine(startStepsTime);
-    playingSong =  true;
   }
   if (onLeds){
     if (actualTime - fewerLedTime <= ledStepTime){
@@ -125,37 +125,51 @@ void loop() {
       fewerFumeTime = millis();
       }
   }
-  //Verify playing status, if it is ready, it means that ended last song; so stop everithing
-  if (player.readState() == playerReady && playingSong){
+  //Verify playing actual song status, if it is ready, it means that ended last song; so stop everything
+  if (player.readState() == playerReady && playingActualSong){
     //Play last lap song; number 1.
     PlayMusic(lastLapSong);
     stopSignal = true;
-    stoppingEngine = true;
-    playingSong = false;
+    playingActualSong = false;
   }
   if (stopSignal){
-    if(GetDistance()<=5 && stoppingEngine){
-      StopMusic();
-      delay(10);
-      PlayMusic(stoppingSong);
-      fewerEngineTime = millis();
-    }
-    if (stoppingEngine){
-      StopEngine(stopStepsTime);
-      if(goToSleep){
-        OffLeds();
-        onLeds = false;
-        StopFumes();
-        onFumes = false;
+    bool songStopped;
+    //If found stop signal, stop song.
+    if(GetDistance()<=5 || songStopped){
+      if (!songStopped){
+        StopMusic();
+        songStopped = true;
+      }
+      //This stops everything even if stop signal is not found.//////////////////////////////////////////////
+      if (player.readState() == playerReady){
+        PlayMusic(stoppingSong);
+        //Verify state of fumes.
+        stoppingEngine = true;
+        //Avoid distance detection and state  of the player again.
+        songStopped = false;
         stopSignal = false;
-        person = true;
-        goToSleep = false;
-        setUp = false; //For stopping engine in next song.
-        delay(30000);
-        fewerPersonTime = millis();
+        fewerEngineTime = millis();
       }
     }
   }
+  if (stoppingEngine){
+    StopEngine(stopStepsTime); 
+  }
+  if(goToSleep){
+      OffLeds();
+      onLeds = false;
+      //Verify fumes state
+      if (onFumes){
+        FinalStopFumes();
+      }
+      onFumes = false;
+      stopSignal = false;
+      person = true;
+      goToSleep = false;
+      setUp = false; //For stopping engine in next song.
+      delay(30000);
+      fewerPersonTime = millis();
+    }
 }
 
 bool DetectPerson(){
@@ -179,7 +193,6 @@ void StopMusic(){
   Serial.println("Deteniendo Módulo DFPlayer");
 }
 int StartEngine(int time){
-  int power;
   if (actualTime-fewerEngineTime >= time){
     power += (int)pwmSteps;
     analogWrite(engine, power);
@@ -190,20 +203,21 @@ int StartEngine(int time){
   }
 }
 void StopEngine(int time){
-  int power;
   if (!setUp){
     power = pwmEnd;
     setUp = true;
   }
   if (actualTime-fewerEngineTime >= time){
     power -= (int)pwmSteps;
+    if (power <= pwmStart){
+      power = 0;
+      stoppingEngine = false;
+      goToSleep = true;
+    } 
     analogWrite(engine, power);
     fewerEngineTime = millis();
   }
-  if (power <= pwmStart){
-    engineWorking = false;
-    analogWrite(engine, 0);
-  } 
+
 }
 void OnLeds(){
   digitalWrite(led1,HIGH);
@@ -223,6 +237,9 @@ void StartFumes(){
   digitalWrite(chimney, LOW);
 }
 void StopFumes(){
+
+}
+void FinalStopFumes(){
   digitalWrite(chimney, HIGH);
   delay(20);
   digitalWrite(chimney, LOW);
