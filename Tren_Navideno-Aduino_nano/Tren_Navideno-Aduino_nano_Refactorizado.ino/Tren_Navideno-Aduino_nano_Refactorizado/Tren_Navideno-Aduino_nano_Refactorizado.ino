@@ -7,16 +7,16 @@
   const int playerBusy = 513, playerReady = 512;
   const int minDist = 40, stopDist = 5;
   const int accelerationTime = 2000, stoppingTime = 2000, detectPersonTime = 1000, stopSensor = 2000;
-  byte actualSong = 3, lastLapSong = 1, stoppingSong = 2, songsQ;
+  byte actualSong = 2, lastLapSong = 1, stoppingSong = 2, songsQ;
   long sensorVal;
-  const int ledStepTime = 250, fumeTime = 100;
-  unsigned long fewerPersonTime, fewerSensorTime, fewerFumeTime,fewerLedTime, actualTime, fewerEngineTime;
+  const int ledStepTime = 250, fumePulseTime = 40;
+  unsigned long fewerPersonTime, fewerSensorTime, fewerFumeTime, fumeElapseTime,fewerLedTime, actualTime, fewerEngineTime;
   int counter;
   SoftwareSerial serialConnection(6, 5); // RX, TX 5
   DFRobotDFPlayerMini player;
-  bool person, stopSignal, playM, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, fumeStopped, playingActualSong, setUp; 
+  bool person, stopSignal, playM, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, playingActualSong, setUpPowerVal, songStopped; 
   //To control starting engine (Time in ms)
-  int startEngineTime = 4000, stopEngineTime = 15000, engineSteps = 200, fumeAltTime = 80, startStepsTime, stopStepsTime, power;
+  int startEngineTime = 4000, stopEngineTime = 15000, engineSteps = 200, startStepsTime, stopStepsTime, power;
   const float pwmStart = 76.5, pwmEnd = 250, pwmSteps = 250/76.5;
 
 
@@ -99,31 +99,10 @@ void loop() {
     }
   }
   if (onFumes){
-    bool started;
-    if (actualTime - fewerFumeTime <= fumeTime){
-      if (!started){
-        StartFumes();
-        started = true;
-      }
-    }else{
-      onFumes = false;
-      fumeStopped = false;
-      started = false;
-      fewerFumeTime = millis();
-    }
+    StartFumes();
   }
   if (!onFumes){
-    bool stopped;
-    if (actualTime - fewerFumeTime <= fumeTime){
-      if (!stopped){
-        StopFumes();
-        stopped = true;
-      }
-    }else{
-      onFumes = true;
-      stopped = false;
-      fewerFumeTime = millis();
-      }
+    StopFumes();
   }
   //Verify playing actual song status, if it is ready, it means that ended last song; so stop everything
   if (player.readState() == playerReady && playingActualSong){
@@ -132,15 +111,14 @@ void loop() {
     stopSignal = true;
     playingActualSong = false;
   }
-  if (stopSignal){
-    bool songStopped;
+  if (stopSignal && player.readState() == playerBusy){
     //If found stop signal, stop song.
-    if(GetDistance()<=5 || songStopped){
+    if(GetDistance() <= 5 || songStopped){
       if (!songStopped){
         StopMusic();
         songStopped = true;
       }
-      //This stops everything even if stop signal is not found.//////////////////////////////////////////////
+    //This stops everything even if stop signal is not found.//////////////////////////////////////////////
       if (player.readState() == playerReady){
         PlayMusic(stoppingSong);
         //Verify state of fumes.
@@ -155,20 +133,15 @@ void loop() {
   if (stoppingEngine){
     StopEngine(stopStepsTime); 
   }
-  if(goToSleep){
-      OffLeds();
-      onLeds = false;
-      //Verify fumes state
-      if (onFumes){
+  if(goToSleep && onFumes){
         FinalStopFumes();
-      }
-      onFumes = false;
-      stopSignal = false;
-      person = true;
-      goToSleep = false;
-      setUp = false; //For stopping engine in next song.
-      delay(30000);
-      fewerPersonTime = millis();
+        onFumes = false;
+        stopSignal = false;
+        person = true;
+        goToSleep = false;
+        setUpPowerVal = false; //For stopping engine in next song.
+        delay(30000);
+        fewerPersonTime = millis();
     }
 }
 
@@ -203,9 +176,9 @@ int StartEngine(int time){
   }
 }
 void StopEngine(int time){
-  if (!setUp){
+  if (!setUpPowerVal){
     power = pwmEnd;
-    setUp = true;
+    setUpPowerVal = true;
   }
   if (actualTime-fewerEngineTime >= time){
     power -= (int)pwmSteps;
@@ -232,22 +205,59 @@ void OffLeds(){
   digitalWrite(led4,LOW); 
 }
 void StartFumes(){
-  digitalWrite(chimney, HIGH);
-  delay(20);
-  digitalWrite(chimney, LOW);
+  fumeElapseTime = actualTime-fewerFumeTime;
+  //25ms on
+  if (fumeElapseTime <= fumePulseTime){
+    digitalWrite(chimney, HIGH);     
+  }else{
+    //75ms off (25 to 100)
+    if (fumeElapseTime <= fumePulseTime*4){
+      digitalWrite(chimney, LOW); 
+    }else{
+      onFumes = false;
+      fewerFumeTime = millis();
+    }
+  }
 }
 void StopFumes(){
-
+  fumeElapseTime = actualTime-fewerFumeTime;
+  //First Pulse
+  //25ms on
+  if (fumeElapseTime <= fumePulseTime){
+    digitalWrite(chimney, HIGH);     
+  }
+  //25ms off (25 to 50)
+  if (fumeElapseTime > fumePulseTime && fumeElapseTime <= fumePulseTime*2 ){
+    digitalWrite(chimney, LOW); 
+  }
+  //Second Pulse
+  //50 to 75
+  if (fumeElapseTime > fumePulseTime*2 && fumeElapseTime <= fumePulseTime*3 ){
+    digitalWrite(chimney, HIGH); 
+  }
+  //75 to 100
+  if (fumeElapseTime > fumePulseTime*3 && fumeElapseTime <= fumePulseTime*4 ){
+    digitalWrite(chimney, LOW); 
+  }else{
+    onFumes = true;
+    fewerFumeTime = millis();
+  }
 }
 void FinalStopFumes(){
+  //Final turn off, no matter synchronization.
+  if (digitalRead(chimney)==HIGH){
+    digitalWrite(chimney, LOW);
+  }
+  delay(25);
   digitalWrite(chimney, HIGH);
-  delay(20);
+  delay(25);
   digitalWrite(chimney, LOW);
-  delay(20);
+  delay(25);
   digitalWrite(chimney, HIGH);
-  delay(20);
+  delay(25);
   digitalWrite(chimney, LOW);
 }
+
 int GetDistance(){
   digitalWrite(trigger, LOW);
   delayMicroseconds(4);
@@ -255,5 +265,6 @@ int GetDistance(){
   delayMicroseconds(10);
   digitalWrite(trigger, LOW);
   sensorVal = pulseIn(sensor, HIGH);
+  Serial.println((String)"Distancia detectada en: " + sensorVal/58);
   return sensorVal/58;
 }
