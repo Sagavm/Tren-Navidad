@@ -6,15 +6,15 @@
   const byte sensor = A0, trigger = A1, stationSound = 1, breakSound = 2, startingSong = 3;
   const int playerBusy = 513, playerReady = 512;
   const int minDist = 40, stopDist = 5;
-  const int accelerationTime = 2000, stoppingTime = 2000, detectPersonTime = 1000, stopSensor = 2000;
-  byte actualSong = 2, lastLapSong = 1, stoppingSong = 2, songsQ;
+  const int accelerationTime = 2000, stoppingTime = 2000, detectPersonTime = 1000, stopSensor = 2000, sleepCycleDuration = 1000;
+  byte actualSong = 3, lastLapSong = 1, stoppingSong = 2, songsQ;
   long sensorVal;
-  const int ledStepTime = 250, fumePulseTime = 40;
-  unsigned long fewerPersonTime, fewerSensorTime, fewerFumeTime, fumeElapseTime,fewerLedTime, actualTime, fewerEngineTime;
+  const int ledStepTime = 250, fumePulseTime = 100;
+  unsigned long fewerPersonTime, fewerSensorTime, fewerFumeTime, fumeElapseTime,fewerLedTime, actualTime, fewerEngineTime, sleepDurationTime;
   int counter;
   SoftwareSerial serialConnection(6, 5); // RX, TX 5
   DFRobotDFPlayerMini player;
-  bool person, stopSignal, playM, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, playingActualSong, playStopSong, setUpPowerVal, songStopped; 
+  bool person, stopSignal, playM, songStarted, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, playingActualSong, playStopSong, setUpPowerVal, songStopped, isSleeping; 
   //To control starting engine (Time in ms)
   int startEngineTime = 4000, stopEngineTime = 15000, engineSteps = 200, startStepsTime, stopStepsTime, power;
   const float pwmStart = 76.5, pwmEnd = 250, pwmSteps = 250/76.5;
@@ -54,32 +54,55 @@ void loop() {
   // put your main code here, to run repeatedly:
   actualTime = millis();
   if (person){
-    if (actualTime - fewerPersonTime >= detectPersonTime) {
-      //If time goes out, wait 1000
-      delay(1000);
-      fewerPersonTime = actualTime;
+    // Lógica para alternar entre Detección (1000ms) y Descanso (1000ms)
+    if (isSleeping){
+        // Rest for 1000ms
+        if (actualTime - fewerPersonTime >= sleepCycleDuration) {
+            // Start detecting
+            isSleeping = false;
+            fewerPersonTime = actualTime; // Reinicia el tiempo para el ciclo de detección
+        }
+    } else {
+        // ESTADO DE DETECCIÓN ACTIVA (1000ms)
+        if (DetectPerson()){
+            // Si detecta, comienza la secuencia del tren
+            playM = true;
+            engineWorking = true; 
+            onLeds = true;
+            onFumes = true;
+            person = false; // Sale del estado de espera
+            isSleeping = false; // Asegura que no está en estado de descanso
+            
+            fewerLedTime = actualTime;
+            fewerFumeTime = actualTime;
+            fewerEngineTime = actualTime;
+            
+        } else {
+            // Si no detecta en el ciclo de detección de 1000ms
+            if (actualTime - fewerPersonTime >= sleepCycleDuration) {
+                // Termina el ciclo de detección, pasa a descansar
+                isSleeping = true;
+                fewerPersonTime = actualTime; // Reinicia el tiempo para el ciclo de descanso
+            }
+        }
     }
-    if (DetectPerson()){
-      playM = true;         //Play music
-      engineWorking = true; //Start engine etc.
-      onLeds = true;
-      onFumes = true;
-      person = false;
-      fewerLedTime = millis();
-      fewerFumeTime = millis();
-    }
-    fewerPersonTime = millis();
   }
   if (playM){
     if (actualSong > songsQ){
       actualSong = 3;
     }
     PlayMusic(actualSong);
-    delay(50);
     actualSong += 1;
     playM = false;
-    playingActualSong =  true;
-    fewerEngineTime = millis();
+    playingActualSong = false; //Still haven't started the song.
+    songStarted = false;
+  }
+  if (!songStarted){
+    if (player.readState() == playerBusy){
+      Serial.println("Canción iniciada; listo para verificar que termine");
+      playingActualSong =  true;
+      songStarted = true;
+    }
   }
   if (engineWorking){
     StartEngine(startStepsTime);
@@ -141,6 +164,7 @@ void loop() {
     stopSignal = false;
     person = true;
     goToSleep = false;
+    songStarted = false;
     setUpPowerVal = false; //For stopping engine in next song.
     Serial.println("Fue a dormir");
     delay(30000);
@@ -151,13 +175,13 @@ void loop() {
 bool DetectPerson(){
   if (GetDistance()<= minDist){
     return true;
-  }
+  } 
   return false;
 }
 bool DetectStop(){
-    if (GetDistance()<= stopDist){
+  if (GetDistance()<= stopDist){
     return true;
-  }
+  } 
   return false;
 }
 void PlayMusic(int song){
@@ -262,12 +286,13 @@ void FinalStopFumes(){
 }
 
 int GetDistance(){
+  delay(50);
   digitalWrite(trigger, LOW);
   delayMicroseconds(4);
   digitalWrite(trigger, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigger, LOW);
-  sensorVal = pulseIn(sensor, HIGH);
+  sensorVal = pulseIn(sensor, HIGH, 30000); //If echo is lost, it get 30ms as answer more or less 5m.
   Serial.println((String)"Distancia detectada en: " + sensorVal/58);
   return sensorVal/58;
 }
