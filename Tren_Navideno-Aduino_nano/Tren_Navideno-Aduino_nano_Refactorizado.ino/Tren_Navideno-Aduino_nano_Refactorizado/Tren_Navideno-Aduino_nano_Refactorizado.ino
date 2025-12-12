@@ -14,7 +14,7 @@
   int counter;
   SoftwareSerial serialConnection(6, 5); // RX, TX 5
   DFRobotDFPlayerMini player;
-  bool person, stopSignal, playM, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, playingActualSong, setUpPowerVal, songStopped; 
+  bool person, stopSignal, playM, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, playingActualSong, playStopSong, setUpPowerVal, songStopped; 
   //To control starting engine (Time in ms)
   int startEngineTime = 4000, stopEngineTime = 15000, engineSteps = 200, startStepsTime, stopStepsTime, power;
   const float pwmStart = 76.5, pwmEnd = 250, pwmSteps = 250/76.5;
@@ -54,19 +54,20 @@ void loop() {
   // put your main code here, to run repeatedly:
   actualTime = millis();
   if (person){
-    while (actualTime - fewerPersonTime <= detectPersonTime){
-      if (DetectPerson()){
-        playM = true;         //Play music
-        engineWorking = true; //Start engine etc.
-        onLeds = true;
-        onFumes = true;
-        person = false;
-        fewerLedTime = millis();
-        fewerFumeTime = millis();
-        return;
-      }
+    if (actualTime - fewerPersonTime >= detectPersonTime) {
+      //If time goes out, wait 1000
+      delay(1000);
+      fewerPersonTime = actualTime;
     }
-    delay(1000);
+    if (DetectPerson()){
+      playM = true;         //Play music
+      engineWorking = true; //Start engine etc.
+      onLeds = true;
+      onFumes = true;
+      person = false;
+      fewerLedTime = millis();
+      fewerFumeTime = millis();
+    }
     fewerPersonTime = millis();
   }
   if (playM){
@@ -74,6 +75,7 @@ void loop() {
       actualSong = 3;
     }
     PlayMusic(actualSong);
+    delay(50);
     actualSong += 1;
     playM = false;
     playingActualSong =  true;
@@ -108,41 +110,42 @@ void loop() {
   if (player.readState() == playerReady && playingActualSong){
     //Play last lap song; number 1.
     PlayMusic(lastLapSong);
+    Serial.println("Reproduciendo pista de última vuelta");
     stopSignal = true;
     playingActualSong = false;
   }
-  if (stopSignal && player.readState() == playerBusy){
-    //If found stop signal, stop song.
-    if(GetDistance() <= 5 || songStopped){
-      if (!songStopped){
+  if (stopSignal){
+    if(GetDistance() <= 5){
         StopMusic();
-        songStopped = true;
-      }
-    //This stops everything even if stop signal is not found.//////////////////////////////////////////////
-      if (player.readState() == playerReady){
-        PlayMusic(stoppingSong);
-        //Verify state of fumes.
-        stoppingEngine = true;
-        //Avoid distance detection and state  of the player again.
-        songStopped = false;
+        Serial.println("Pista de última vuelta detenida");
+        playStopSong = true;
         stopSignal = false;
-        fewerEngineTime = millis();
       }
-    }
+  }
+  //This stops everything.
+  if (player.readState() == playerReady && playStopSong){
+    Serial.println("Reproduciendo frenado");
+    PlayMusic(stoppingSong);
+    //Verify state of fumes.
+    stoppingEngine = true;
+    //Prepare for measure engine time.
+    fewerEngineTime = millis();
+    playStopSong = false;
   }
   if (stoppingEngine){
     StopEngine(stopStepsTime); 
   }
   if(goToSleep && onFumes){
-        FinalStopFumes();
-        onFumes = false;
-        stopSignal = false;
-        person = true;
-        goToSleep = false;
-        setUpPowerVal = false; //For stopping engine in next song.
-        delay(30000);
-        fewerPersonTime = millis();
-    }
+    FinalStopFumes();
+    onFumes = false;
+    stopSignal = false;
+    person = true;
+    goToSleep = false;
+    setUpPowerVal = false; //For stopping engine in next song.
+    Serial.println("Fue a dormir");
+    delay(30000);
+    fewerPersonTime = millis();
+  }
 }
 
 bool DetectPerson(){
