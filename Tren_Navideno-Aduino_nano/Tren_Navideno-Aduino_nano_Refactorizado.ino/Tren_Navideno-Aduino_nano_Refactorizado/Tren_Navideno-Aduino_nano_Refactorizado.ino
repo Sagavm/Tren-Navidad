@@ -1,23 +1,31 @@
-#include <SoftwareSerial.h>
-  #include <DFRobotDFPlayerMini.h>
-  const byte chimney = 2; 
-  const byte engine = 3; //To applty PWM signal to control the speed.
-  const byte led1 = 9, led2 = 10, led3 = 11, led4 = 13; ///////////////////////////////////////////////////Cambiar al final
-  const byte sensor = A0, trigger = A1, stationSound = 1, breakSound = 2, startingSong = 3;
-  const int playerBusy = 513, playerReady = 512;
-  const int minDist = 40, stopDist = 5;
-  const int accelerationTime = 2000, stoppingTime = 2000, detectPersonTime = 1000, stopSensor = 2000, sleepCycleDuration = 1000;
-  byte actualSong = 3, lastLapSong = 1, stoppingSong = 2, songsQ;
-  long sensorVal;
-  const int ledStepTime = 250, fumePulseTime = 100;
-  unsigned long fewerPersonTime, fewerSensorTime, fewerFumeTime, fumeElapseTime,fewerLedTime, actualTime, fewerEngineTime, sleepDurationTime;
-  int counter;
-  SoftwareSerial serialConnection(6, 5); // RX, TX 5
-  DFRobotDFPlayerMini player;
-  bool person, stopSignal, playM, songStarted, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, playingActualSong, playStopSong, setUpPowerVal, songStopped, isSleeping; 
-  //To control starting engine (Time in ms)
-  int startEngineTime = 4000, stopEngineTime = 15000, engineSteps = 200, startStepsTime, stopStepsTime, power;
-  const float pwmStart = 76.5, pwmEnd = 250, pwmSteps = 250/76.5;
+#include <NeoSWSerial.h>
+#include <DFRobotDFPlayerMini.h>
+
+const byte chimney = 2; 
+const byte engine = 3; //To applty PWM signal to control the speed.
+const byte led1 = 9, led2 = 10, led3 = 11, led4 = 13; ///////////////////////////////////////////////////Cambiar al final
+const byte sensor = A0, trigger = A1, stationSound = 1, breakSound = 2, startingSong = 3;
+const int playerBusy = 513, playerReady = 512;
+const int minDist = 40, stopDist = 5;
+const int accelerationTime = 2000, stoppingTime = 2000, detectPersonTime = 1000, stopSensor = 2000, sleepCycleDuration = 1000;
+
+byte actualSong = 3, lastLapSong = 1, stoppingSong = 2, songsQ;
+
+long sensorVal;
+
+unsigned long fewerPersonTime, fewerSensorTime, fewerFumeTime, fumeElapseTime, fewerLedTime, actualTime, fewerEngineTime, sleepDurationTime;
+
+// NeoSWSerial instead of SoftwareSerial
+NeoSWSerial serialConnection(6, 5); // RX, TX 5
+
+DFRobotDFPlayerMini player;
+
+bool person, stopSignal, playM, songStarted, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, playingActualSong, playStopSong, setUpPowerVal, songStopped, isSleeping;
+
+//To control starting engine (Time in ms)
+int startEngineTime = 4000, stopEngineTime = 15000, engineSteps = 200, startStepsTime, stopStepsTime, power, distance;
+const int ledStepTime = 250, fumePulseTime = 250;
+const float pwmStart = 76.5, pwmEnd = 250, pwmSteps = 250 / 76.5;
 
 
 void setup() {
@@ -46,6 +54,7 @@ void setup() {
   //Inicio de variables
   person = true;
   fewerPersonTime = millis();
+  distance = 200;
   startStepsTime = (int)startEngineTime/engineSteps;
   stopStepsTime = (int)stopEngineTime/engineSteps;
 }
@@ -138,7 +147,8 @@ void loop() {
     playingActualSong = false;
   }
   if (stopSignal){
-    if(GetDistance() <= 5){
+    distance = GetDistance();
+    if(distance <= 5){
         StopMusic();
         Serial.println("Pista de última vuelta detenida");
         playStopSong = true;
@@ -173,13 +183,15 @@ void loop() {
 }
 
 bool DetectPerson(){
-  if (GetDistance()<= minDist){
+  distance = GetDistance();
+  if (distance <= minDist){
     return true;
   } 
   return false;
 }
 bool DetectStop(){
-  if (GetDistance()<= stopDist){
+  distance = GetDistance();
+  if (distance <= stopDist){
     return true;
   } 
   return false;
@@ -196,6 +208,7 @@ int StartEngine(int time){
   if (actualTime-fewerEngineTime >= time){
     power += (int)pwmSteps;
     analogWrite(engine, power);
+    //digitalWrite(engine, HIGH);
     fewerEngineTime = millis();
   }
   if (power >= pwmEnd){
@@ -215,6 +228,7 @@ void StopEngine(int time){
       goToSleep = true;
     } 
     analogWrite(engine, power);
+    //digitalWrite(engine, LOW);
     fewerEngineTime = millis();
   }
 
@@ -235,11 +249,13 @@ void StartFumes(){
   fumeElapseTime = actualTime-fewerFumeTime;
   //25ms on
   if (fumeElapseTime <= fumePulseTime){
-    digitalWrite(chimney, HIGH);     
+    digitalWrite(chimney, HIGH);
+    Serial.println((String)"Start High" + fumeElapseTime);    
   }else{
     //75ms off (25 to 100)
     if (fumeElapseTime <= fumePulseTime*4){
       digitalWrite(chimney, LOW); 
+      Serial.println((String)"Start LOW" + fumeElapseTime) ;
     }else{
       onFumes = false;
       fewerFumeTime = millis();
@@ -286,13 +302,13 @@ void FinalStopFumes(){
 }
 
 int GetDistance(){
-  delay(50);
+  //delay(50);
   digitalWrite(trigger, LOW);
   delayMicroseconds(4);
   digitalWrite(trigger, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigger, LOW);
   sensorVal = pulseIn(sensor, HIGH, 30000); //If echo is lost, it get 30ms as answer more or less 5m.
-  Serial.println((String)"Distancia detectada en: " + sensorVal/58);
-  return sensorVal/58;
+  //Serial.println((String)"Distancia detectada en: " + sensorVal/58);
+  return (int)sensorVal/58;
 }
