@@ -5,11 +5,12 @@ const byte chimney = 2;
 const byte engine = 3; //To applty PWM signal to control the speed.
 const byte led1 = 9, led2 = 10, led3 = 11, led4 = 13; ///////////////////////////////////////////////////Cambiar al final
 const byte sensor = A0, trigger = A1, stationSound = 1, breakSound = 2, startingSong = 3;
+
 const int playerBusy = 513, playerReady = 512;
 const int minDist = 40, stopDist = 5;
 const int accelerationTime = 2000, stoppingTime = 2000, detectPersonTime = 1000, stopSensor = 2000, sleepCycleDuration = 1000;
 
-byte actualSong = 3, lastLapSong = 1, stoppingSong = 2, songsQ;
+byte actualSong = 3, lastLapSong = 1, stoppingSong = 2, songsQ, fumeState; //Used to known in what state is the pulse of the fume.
 
 long sensorVal;
 
@@ -24,7 +25,7 @@ bool person, stopSignal, playM, songStarted, stopM, engineWorking, onLeds, onFum
 
 //To control starting engine (Time in ms)
 int startEngineTime = 4000, stopEngineTime = 15000, engineSteps = 200, startStepsTime, stopStepsTime, power, distance;
-const int ledStepTime = 250, fumePulseTime = 250;
+const int ledStepTime = 250, fumeOnPulseTime = 50, fumeOffPulseTime = 50;
 const float pwmStart = 76.5, pwmEnd = 250, pwmSteps = 250 / 76.5;
 
 
@@ -135,9 +136,6 @@ void loop() {
   if (onFumes){
     StartFumes();
   }
-  if (!onFumes){
-    StopFumes();
-  }
   //Verify playing actual song status, if it is ready, it means that ended last song; so stop everything
   if (player.readState() == playerReady && playingActualSong){
     //Play last lap song; number 1.
@@ -168,7 +166,7 @@ void loop() {
   if (stoppingEngine){
     StopEngine(stopStepsTime); 
   }
-  if(goToSleep && onFumes){
+  if(goToSleep){
     FinalStopFumes();
     onFumes = false;
     stopSignal = false;
@@ -246,45 +244,48 @@ void OffLeds(){
   digitalWrite(led4,LOW); 
 }
 void StartFumes(){
+  int tempOffFumeTime;
   fumeElapseTime = actualTime-fewerFumeTime;
-  //25ms on
-  if (fumeElapseTime <= fumePulseTime){
+  
+  //Activate fumes.
+  if (fumeElapseTime <= fumeOnPulseTime){
     digitalWrite(chimney, HIGH);
-    Serial.println((String)"Start High" + fumeElapseTime);    
-  }else{
-    //75ms off (25 to 100)
-    if (fumeElapseTime <= fumePulseTime*4){
-      digitalWrite(chimney, LOW); 
-      Serial.println((String)"Start LOW" + fumeElapseTime) ;
-    }else{
-      onFumes = false;
-      fewerFumeTime = millis();
-    }
+    //Serial.println((String)"Start High" + fumeElapseTime);
+    fumeState = 1;  
   }
-}
-void StopFumes(){
-  fumeElapseTime = actualTime-fewerFumeTime;
-  //First Pulse
-  //25ms on
-  if (fumeElapseTime <= fumePulseTime){
-    digitalWrite(chimney, HIGH);     
-  }
-  //25ms off (25 to 50)
-  if (fumeElapseTime > fumePulseTime && fumeElapseTime <= fumePulseTime*2 ){
+  if (fumeElapseTime > fumeOnPulseTime && fumeElapseTime <= fumeOnPulseTime*4){
     digitalWrite(chimney, LOW); 
+    //Serial.println((String)"Start LOW" + fumeElapseTime) ;
+    fumeState = 2;
+  }
+ //Now deactivate it.
+ tempOffFumeTime = fumeOnPulseTime*4;
+  if (fumeElapseTime > tempOffFumeTime && fumeElapseTime <= tempOffFumeTime + fumeOffPulseTime){
+    digitalWrite(chimney, HIGH);   
+    fumeState = 3;  
+  }
+  if (fumeElapseTime > tempOffFumeTime + fumeOffPulseTime && fumeElapseTime <= tempOffFumeTime + fumeOffPulseTime*2){
+    digitalWrite(chimney, LOW); 
+    fumeState = 4;
   }
   //Second Pulse
   //50 to 75
-  if (fumeElapseTime > fumePulseTime*2 && fumeElapseTime <= fumePulseTime*3 ){
+  if (fumeElapseTime > tempOffFumeTime + fumeOffPulseTime*2 && fumeElapseTime <= tempOffFumeTime + fumeOffPulseTime*3){
     digitalWrite(chimney, HIGH); 
+    fumeState = 5;
   }
   //75 to 100
-  if (fumeElapseTime > fumePulseTime*3 && fumeElapseTime <= fumePulseTime*4 ){
+  if (fumeElapseTime > tempOffFumeTime + fumeOffPulseTime*3 && fumeElapseTime <= tempOffFumeTime + fumeOffPulseTime*4){
     digitalWrite(chimney, LOW); 
-  }else{
-    onFumes = true;
+    fumeState = 6;
+  }
+  if (fumeElapseTime > tempOffFumeTime + fumeOffPulseTime*4){
+    //onFumes = true;
     fewerFumeTime = millis();
   }
+}
+void StopFumes(){
+
 }
 void FinalStopFumes(){
   //Final turn off, no matter synchronization.
