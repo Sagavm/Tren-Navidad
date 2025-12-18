@@ -56,6 +56,7 @@ void setup() {
   person = true;
   fewerPersonTime = millis();
   distance = 200;
+  goToSleep = false;
   startStepsTime = (int)startEngineTime/engineSteps;
   stopStepsTime = (int)stopEngineTime/engineSteps;
 }
@@ -146,6 +147,7 @@ void loop() {
   }
   if (stopSignal){
     distance = GetDistance();
+    //Serial.println((String)"Midiendo distancia final: " + distance);
     if(distance <= 5){
         StopMusic();
         Serial.println("Pista de última vuelta detenida");
@@ -208,24 +210,30 @@ int StartEngine(int time){
     analogWrite(engine, power);
     //digitalWrite(engine, HIGH);
     fewerEngineTime = millis();
+    Serial.println((String)"Aumentando Power a: " + power);
   }
   if (power >= pwmEnd){
     engineWorking = false;
   }
 }
 void StopEngine(int time){
+  Serial.println((String)"Entrando a stop");
   if (!setUpPowerVal){
     power = pwmEnd;
     setUpPowerVal = true;
   }
   if (actualTime-fewerEngineTime >= time){
+    Serial.println((String)"Tiempo medido: " + (actualTime-fewerEngineTime));
     power -= (int)pwmSteps;
     if (power <= pwmStart){
       power = 0;
       stoppingEngine = false;
       goToSleep = true;
+      Serial.println((String)"Power en cero: " + power);
     } 
+    
     analogWrite(engine, power);
+    Serial.println((String)"Reduciendo Power a: " + power);
     //digitalWrite(engine, LOW);
     fewerEngineTime = millis();
   }
@@ -311,5 +319,8 @@ int GetDistance(){
   digitalWrite(trigger, LOW);
   sensorVal = pulseIn(sensor, HIGH, 30000); //If echo is lost, it get 30ms as answer more or less 5m.
   //Serial.println((String)"Distancia detectada en: " + sensorVal/58);
+  if (sensorVal == 0 || sensorVal == 30000){
+    return 200;
+  }
   return (int)sensorVal/58;
 }
