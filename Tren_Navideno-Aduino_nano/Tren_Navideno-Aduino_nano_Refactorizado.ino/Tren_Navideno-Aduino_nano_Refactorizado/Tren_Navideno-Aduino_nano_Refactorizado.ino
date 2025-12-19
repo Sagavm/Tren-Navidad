@@ -1,11 +1,11 @@
 #include <NeoSWSerial.h>
 #include <DFRobotDFPlayerMini.h>
 
-const byte chimney = 2; 
+const byte chimney = A5;//2; 
+const byte chimneyState = A6;
 const byte engine = 3; //To applty PWM signal to control the speed.
-const byte led1 = 9, led2 = 10, led3 = 11, led4 = 13; ///////////////////////////////////////////////////Cambiar al final
+const byte led1 = 9, led2 = 10, led3 = 11, led4 = 12;//12; ///////////////////////////////////////////////////Cambiar al final
 const byte sensor = A0, trigger = A1, stationSound = 1, breakSound = 2, startingSong = 3;
-
 const int playerBusy = 513, playerReady = 512;
 const int minDist = 40, stopDist = 5;
 const int accelerationTime = 2000, stoppingTime = 2000, detectPersonTime = 1000, stopSensor = 2000, sleepCycleDuration = 1000;
@@ -14,24 +14,25 @@ byte actualSong = 3, lastLapSong = 1, stoppingSong = 2, songsQ, fumeState; //Use
 
 long sensorVal;
 
-unsigned long fewerPersonTime, fewerSensorTime, fewerFumeTime, fumeElapseTime, fewerLedTime, actualTime, fewerEngineTime, sleepDurationTime;
+unsigned long fewerPersonTime, fewerSensorTime, fewerFumeTime, fumeElapseTime, fewerLedTime, actualTime, fewerEngineTime, sleepDurationTime, fewerSleepingTime, fewerSleepingStepTime;
 
 // NeoSWSerial instead of SoftwareSerial
 NeoSWSerial serialConnection(6, 5); // RX, TX 5
 
 DFRobotDFPlayerMini player;
 
-bool person, stopSignal, playM, songStarted, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, playingActualSong, playStopSong, setUpPowerVal, songStopped, isSleeping;
+bool person, stopSignal, playM, songStarted, stopM, engineWorking, onLeds, onFumes, stoppingEngine, goToSleep, sleeping, playingActualSong, playStopSong, setUpPowerVal, songStopped, isSleeping, sentShutdownPulse;
 
 //To control starting engine (Time in ms)
 int startEngineTime = 4000, stopEngineTime = 15000, engineSteps = 200, startStepsTime, stopStepsTime, power, distance;
-const int ledStepTime = 250, fumeOnPulseTime = 50, fumeOffPulseTime = 50;
-const float pwmStart = 76.5, pwmEnd = 250, pwmSteps = 250 / 76.5;
+int ledStepTime = 250, fumeOnPulseTime = 150, fumeOffPulseTime = 50, sleepingTime = 30000;
+const float pwmStart = 76.5, pwmEnd = 250, pwmSteps = 250.0 / 76.5;
 
 
 void setup() {
   // put your setup code here, to run once:
   pinMode(chimney, OUTPUT);
+  pinMode(chimneyState, INPUT);
   pinMode(engine, OUTPUT);
   pinMode(led1, OUTPUT);
   pinMode(led2, OUTPUT);
@@ -64,6 +65,7 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   actualTime = millis();
+  //Serial.println((String)"Estado de fumes: " + digitalRead(chimneyState));
   if (person){
     // Lógica para alternar entre Detección (1000ms) y Descanso (1000ms)
     if (isSleeping){
@@ -110,7 +112,7 @@ void loop() {
   }
   if (!songStarted){
     if (player.readState() == playerBusy){
-      Serial.println("Canción iniciada; listo para verificar que termine");
+      //Serial.println("Canción iniciada; listo para verificar que termine");
       playingActualSong =  true;
       songStarted = true;
     }
@@ -161,6 +163,7 @@ void loop() {
     PlayMusic(stoppingSong);
     //Verify state of fumes.
     stoppingEngine = true;
+    fumeOnPulseTime = (int)fumeOnPulseTime*2;
     //Prepare for measure engine time.
     fewerEngineTime = millis();
     playStopSong = false;
@@ -169,16 +172,51 @@ void loop() {
     StopEngine(stopStepsTime); 
   }
   if(goToSleep){
-    FinalStopFumes();
     onFumes = false;
     stopSignal = false;
-    person = true;
     goToSleep = false;
     songStarted = false;
     setUpPowerVal = false; //For stopping engine in next song.
     Serial.println("Fue a dormir");
-    delay(30000);
-    fewerPersonTime = millis();
+    sleeping = true;
+    //delay(30000);
+    fewerPersonTime = actualTime;
+    fewerSleepingTime = actualTime;
+    fewerSleepingStepTime = actualTime;
+    //FinalStopFumes();
+  }
+  if (sleeping){
+    SleepingTasks();
+  }
+}
+
+void SleepingTasks(){ 
+  static unsigned long timeSteps;
+  static int chimneySensorValue;
+  chimneySensorValue = analogRead(chimneyState);
+  timeSteps = actualTime - fewerSleepingStepTime;
+  //Serial.println(chimneySensorValue);
+  if (timeSteps <= 100){
+    digitalWrite(13, HIGH);
+    //Serial.println((String)"Haciendo Tareas");
+    if (chimneySensorValue <= 700 && !sentShutdownPulse){
+      //Serial.println((String)"Estado de fumes: " + digitalRead(chimneyState));
+      digitalWrite(chimney, HIGH);
+      sentShutdownPulse = true;
+    }
+  }
+  if (timeSteps > 100 && timeSteps <= 200){
+      digitalWrite(chimney, LOW);
+      sentShutdownPulse = false;
+      digitalWrite(13, LOW);
+  }
+  if (timeSteps > 200){
+    fewerSleepingStepTime = actualTime;
+  }
+  if (actualTime - fewerSleepingTime > sleepingTime){
+    person = true;
+    sleeping = false;
+    sentShutdownPulse = false;
   }
 }
 
@@ -210,36 +248,38 @@ int StartEngine(int time){
     analogWrite(engine, power);
     //digitalWrite(engine, HIGH);
     fewerEngineTime = millis();
-    Serial.println((String)"Aumentando Power a: " + power);
+    //Serial.println((String)"Aumentando Power a: " + power);
   }
   if (power >= pwmEnd){
     engineWorking = false;
   }
 }
 void StopEngine(int time){
-  Serial.println((String)"Entrando a stop");
+  //Serial.println((String)"Entrando a stop");
   if (!setUpPowerVal){
     power = pwmEnd;
     setUpPowerVal = true;
   }
   if (actualTime-fewerEngineTime >= time){
-    Serial.println((String)"Tiempo medido: " + (actualTime-fewerEngineTime));
+    //Serial.println((String)"Tiempo medido: " + (actualTime-fewerEngineTime));
     power -= (int)pwmSteps;
     if (power <= pwmStart){
       power = 0;
       stoppingEngine = false;
+      fumeOnPulseTime = fumeOnPulseTime/2;
       goToSleep = true;
-      Serial.println((String)"Power en cero: " + power);
+      //Serial.println((String)"Power en cero: " + power);
     } 
     
     analogWrite(engine, power);
-    Serial.println((String)"Reduciendo Power a: " + power);
+    //Serial.println((String)"Reduciendo Power a: " + power);
     //digitalWrite(engine, LOW);
-    fewerEngineTime = millis();
+    fewerEngineTime = actualTime; //millis();
   }
 
 }
 void OnLeds(){
+  //Serial.println((String)"Estado de fumes: " + analogRead(chimneyState));
   digitalWrite(led1,HIGH);
   digitalWrite(led2,HIGH);
   digitalWrite(led3,HIGH);
@@ -253,6 +293,7 @@ void OffLeds(){
 }
 void StartFumes(){
   int tempOffFumeTime;
+
   fumeElapseTime = actualTime-fewerFumeTime;
   
   //Activate fumes.
@@ -261,13 +302,13 @@ void StartFumes(){
     //Serial.println((String)"Start High" + fumeElapseTime);
     fumeState = 1;  
   }
-  if (fumeElapseTime > fumeOnPulseTime && fumeElapseTime <= fumeOnPulseTime*4){
+  if (fumeElapseTime > fumeOnPulseTime && fumeElapseTime <= fumeOnPulseTime*2){
     digitalWrite(chimney, LOW); 
     //Serial.println((String)"Start LOW" + fumeElapseTime) ;
     fumeState = 2;
   }
  //Now deactivate it.
- tempOffFumeTime = fumeOnPulseTime*4;
+ tempOffFumeTime = fumeOnPulseTime*2;
   if (fumeElapseTime > tempOffFumeTime && fumeElapseTime <= tempOffFumeTime + fumeOffPulseTime){
     digitalWrite(chimney, HIGH);   
     fumeState = 3;  
@@ -276,40 +317,23 @@ void StartFumes(){
     digitalWrite(chimney, LOW); 
     fumeState = 4;
   }
-  //Second Pulse
-  //50 to 75
   if (fumeElapseTime > tempOffFumeTime + fumeOffPulseTime*2 && fumeElapseTime <= tempOffFumeTime + fumeOffPulseTime*3){
     digitalWrite(chimney, HIGH); 
     fumeState = 5;
   }
-  //75 to 100
   if (fumeElapseTime > tempOffFumeTime + fumeOffPulseTime*3 && fumeElapseTime <= tempOffFumeTime + fumeOffPulseTime*4){
     digitalWrite(chimney, LOW); 
     fumeState = 6;
   }
-  if (fumeElapseTime > tempOffFumeTime + fumeOffPulseTime*4){
+  if (fumeElapseTime > tempOffFumeTime + fumeOffPulseTime*4 && fumeElapseTime <= tempOffFumeTime + fumeOffPulseTime*8){
     //onFumes = true;
-    fewerFumeTime = millis();
+    fumeState = 7;
+  }
+  //Wait in off mode
+  if (fumeElapseTime > tempOffFumeTime + fumeOffPulseTime*8){
+    fewerFumeTime = actualTime;
   }
 }
-void StopFumes(){
-
-}
-void FinalStopFumes(){
-  //Final turn off, no matter synchronization.
-  if (digitalRead(chimney)==HIGH){
-    digitalWrite(chimney, LOW);
-  }
-  delay(25);
-  digitalWrite(chimney, HIGH);
-  delay(25);
-  digitalWrite(chimney, LOW);
-  delay(25);
-  digitalWrite(chimney, HIGH);
-  delay(25);
-  digitalWrite(chimney, LOW);
-}
-
 int GetDistance(){
   //delay(50);
   digitalWrite(trigger, LOW);
