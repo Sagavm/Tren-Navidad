@@ -25,7 +25,7 @@ bool person, stopSignal, playM, songStarted, stopM, engineWorking, onLeds, onFum
 
 //To control starting engine (Time in ms)
 int startEngineTime = 4000, stopEngineTime = 15000, engineSteps = 200, startStepsTime, stopStepsTime, power, distance;
-int ledStepTime = 250, fumeOnPulseTime = 150, fumeOffPulseTime = 50, sleepingTime = 30000;
+int ledStepTime = 250, fumeOnPulseTime = 100, fumeOffPulseTime = 20, offFumeMultiplier = 11, sleepingTime = 30000;
 const float pwmStart = 76.5, pwmEnd = 250, pwmSteps = 250.0 / 76.5;
 
 
@@ -65,7 +65,7 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   actualTime = millis();
-  //Serial.println((String)"Estado de fumes: " + digitalRead(chimneyState));
+  //Serial.println((String)"Estado de fumes: " + analogRead(chimneyState));
   if (person){
     // Lógica para alternar entre Detección (1000ms) y Descanso (1000ms)
     if (isSleeping){
@@ -330,7 +330,7 @@ void StartFumes(){
     fumeState = 7;
   }
   //Wait in off mode
-  if (fumeElapseTime > tempOffFumeTime + fumeOffPulseTime*8){
+  if (fumeElapseTime > tempOffFumeTime + fumeOffPulseTime*offFumeMultiplier){
     fewerFumeTime = actualTime;
   }
 }
