@@ -161,7 +161,6 @@ void loop() {
   if (player.readState() == playerReady && playStopSong){
     Serial.println("Reproduciendo frenado");
     PlayMusic(stoppingSong);
-    //Verify state of fumes.
     stoppingEngine = true;
     fumeOnPulseTime = (int)fumeOnPulseTime*2;
     //Prepare for measure engine time.
@@ -265,10 +264,12 @@ void StopEngine(int time){
     power -= (int)pwmSteps;
     if (power <= pwmStart){
       power = 0;
-      stoppingEngine = false;
-      fumeOnPulseTime = fumeOnPulseTime/2;
-      goToSleep = true;
       //Serial.println((String)"Power en cero: " + power);
+      if (player.readState() == playerReady){
+        goToSleep = true;
+        stoppingEngine = false;
+        fumeOnPulseTime = fumeOnPulseTime/2;
+      }
     } 
     
     analogWrite(engine, power);
