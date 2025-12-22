@@ -40,7 +40,8 @@ void setup() {
   pinMode(led4, OUTPUT);
   pinMode(sensor, INPUT);
   pinMode(trigger,OUTPUT);
-   ////////////////////////////////////////////////////////
+   ////////////////////////////////////////////////////////Put the pwm at 31.25Khz
+  TCCR2B = (TCCR2B & 0b11111000) | 0x01;
   bool dfPlayerStarted = false;
   serialConnection.begin(9600);
   Serial.begin(9600); //Start communication between pc and board
